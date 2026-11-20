@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<!--
+	Page shell for the desktop app. The Rust side serves this at "/" with
+	CREATOR_CONTENT replaced by creator/index.html, so the creator runs as a
+	normal page: no htmx, menu, home page or other tools.
+-->
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Card Conjurer</title>
+	<link rel="stylesheet" href="/css/reset.css">
+	<link rel="stylesheet" href="/css/style-9.css">
+	<link rel="stylesheet" href="/desktop/web/desktop.css">
+	<link rel="shortcut icon" href="/core/favicon.ico">
+	<script src="/js/themes.js"></script>
+	<!-- Must load before creator-23.js: it provides `cardStore`. -->
+	<script src="/desktop/web/card-store.js"></script>
+	<script defer src="/js/main-1.js"></script>
+</head>
+<body>
+	<div class="background"></div>
+	<div class="notification-container"></div>
+	<div id="content">
+<!-- CREATOR_CONTENT -->
+	</div>
+	<!-- Runs after the creator's deferred scripts (document order). -->
+	<script defer src="/desktop/web/history.js"></script>
+</body>
+</html>

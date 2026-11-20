@@ -4997,12 +4997,8 @@ function changeCardIndex() {
 		fetchSetSymbol();
 	}
 }
-function loadAvailableCards(cardKeys = JSON.parse(localStorage.getItem('cardKeys'))) {
-	if (!cardKeys) {
-		cardKeys = [];
-		cardKeys.sort();
-		localStorage.setItem('cardKeys', JSON.stringify(cardKeys));
-	}
+function loadAvailableCards(cardKeys = cardStore.keys()) { // DESKTOP: saved cards come from cardStore
+	cardKeys = cardKeys || [];
 	document.querySelector('#load-card-options').innerHTML = '<option selected="selected" disabled>None selected</option>';
 	cardKeys.forEach(item => {
 		var cardKeyOption = document.createElement('option');
@@ -5014,8 +5010,8 @@ function importChanged() {
 	var unique = document.querySelector('#importAllPrints').checked ? 'prints' : '';
 	fetchScryfallData(document.querySelector("#import-name").value, importCard, unique);
 }
-function saveCard(saveFromFile) {
-	var cardKeys = JSON.parse(localStorage.getItem('cardKeys')) || [];
+async function saveCard(saveFromFile) {
+	var cardKeys = cardStore.keys(); // DESKTOP
 	var cardKey, cardToSave;
 	if (saveFromFile) {
 		cardKey = saveFromFile.key;
@@ -5046,26 +5042,28 @@ function saveCard(saveFromFile) {
 			frame.masks.forEach(mask => delete mask.image);
 		});
 	}
-	try {
-		localStorage.setItem(cardKey, JSON.stringify(cardToSave));
-		if (!cardKeys.includes(cardKey)) {
-			cardKeys.push(cardKey);
-			cardKeys.sort();
-			localStorage.setItem('cardKeys', JSON.stringify(cardKeys));
-			loadAvailableCards(cardKeys);
-		}
+	try { // DESKTOP: saved to disk by cardStore, no size limit
+		await cardStore.set(cardKey, JSON.stringify(cardToSave));
+		loadAvailableCards();
 	} catch (error) {
-		notify('You have exceeded your 5MB of local storage, and your card has failed to save. If you would like to continue saving cards, please download all saved cards, then delete all saved cards to free up space.<br><br>Local storage is most often exceeded by uploading large images directly from your computer. If possible/convenient, using a URL avoids the need to save these large images.<br><br>Apologies for the inconvenience.');
+		notify('Your card "' + cardKey + '" failed to save: ' + error, 10);
 	}
 }
 async function loadCard(selectedCardKey) {
+	var savedCardData = await cardStore.get(selectedCardKey); // DESKTOP
+	await loadCardData(savedCardData, selectedCardKey);
+	if (window.cardHistory) {cardHistory.reset();} // DESKTOP: a loaded card starts a fresh undo history
+}
+// DESKTOP: split out of loadCard so undo/redo can restore snapshots. Takes card JSON text or an object.
+async function loadCardData(savedCardData, selectedCardKey = 'Card') {
 	//clear the draggable frames
 	document.querySelector('#frame-list').innerHTML = null;
 	//clear the existing card, then replace it with the new JSON
 	card = {};
-	card = JSON.parse(localStorage.getItem(selectedCardKey));
+	card = typeof savedCardData == 'string' ? JSON.parse(savedCardData) : savedCardData; // DESKTOP
 	//if the card was loaded properly...
 	if (card) {
+		if (selectedTextIndex >= Object.keys(card.text || {}).length) {selectedTextIndex = 0;} // DESKTOP: the card may have fewer text boxes
 		//load values from card into html inputs
 		document.querySelector('#info-number').value = card.infoNumber;
 		document.querySelector('#info-rarity').value = card.infoRarity;
@@ -5128,30 +5126,24 @@ async function loadCard(selectedCardKey) {
 }
 function deleteCard() {
 	var keyToDelete = document.querySelector('#load-card-options').value;
-	if (keyToDelete) {
-		var cardKeys = JSON.parse(localStorage.getItem('cardKeys'));
-		cardKeys.splice(cardKeys.indexOf(keyToDelete), 1);
-		cardKeys.sort();
-		localStorage.setItem('cardKeys', JSON.stringify(cardKeys));
-		localStorage.removeItem(keyToDelete);
-		loadAvailableCards(cardKeys);
+	if (keyToDelete) { // DESKTOP
+		cardStore.remove(keyToDelete).catch(error => notify('"' + keyToDelete + '" failed to delete: ' + error, 10));
+		loadAvailableCards();
 	}
 }
 function deleteSavedCards() {
 	if (confirm('WARNING:\n\nALL of your saved cards will be deleted! If you would like to save these cards, please make sure you have downloaded them first. There is no way to undo this.\n\n(Press "OK" to delete your cards)')) {
-		var cardKeys = JSON.parse(localStorage.getItem('cardKeys'));
-		cardKeys.forEach(key => localStorage.removeItem(key));
-		localStorage.setItem('cardKeys', JSON.stringify([]));
+		cardStore.clear().catch(error => notify('Failed to delete saved cards: ' + error, 10)); // DESKTOP
 		loadAvailableCards([]);
 	}
 }
 async function downloadSavedCards() {
-	var cardKeys = JSON.parse(localStorage.getItem('cardKeys'));
-	if (cardKeys) {
+	var cardKeys = cardStore.keys(); // DESKTOP
+	if (cardKeys.length) {
 		var allSavedCards = [];
-		cardKeys.forEach(item => {
-			allSavedCards.push({key:item, data:JSON.parse(localStorage.getItem(item))});
-		});
+		for (const item of cardKeys) {
+			allSavedCards.push({key:item, data:JSON.parse(await cardStore.get(item))});
+		}
 		var download = document.createElement('a');
 		download.href = URL.createObjectURL(new Blob([JSON.stringify(allSavedCards)], {type:'text'}));
 		download.download = 'saved-cards.cardconjurer';
@@ -5495,6 +5487,7 @@ if (!localStorage.getItem('enableNewCollectorStyle')) {
 }
 if (!localStorage.getItem('enableCollectorInfo')) {
 	localStorage.setItem('enableCollectorInfo', 'true');
+	document.querySelector('#enableCollectorInfo').checked = true; // DESKTOP: first run saved 'true' but left the box unticked
 } else {
 	document.querySelector('#enableCollectorInfo').checked = (localStorage.getItem('enableCollectorInfo') == 'true');
 }
@@ -5505,8 +5498,9 @@ if (!localStorage.getItem('autoFrame')) {
 }
 if (!localStorage.getItem('autoFit')) {
 	localStorage.setItem('autoFit', 'true');
+	document.querySelector('#art-update-autofit').checked = true; // DESKTOP: match the saved default
 } else {
-	document.querySelector('#art-update-autofit').checked = localStorage.getItem('autoFit');
+	document.querySelector('#art-update-autofit').checked = localStorage.getItem('autoFit') == 'true'; // DESKTOP: the string 'false' counted as on
 }
 
 // lock set symbol code (user defaults)
@@ -5539,5 +5533,5 @@ bindInputs('#show-guidelines', '#show-guidelines-2', true);
 
 // Load / init whatever
 loadScript('/js/frames/groupStandard-3.js');
-loadAvailableCards();
+cardStore.ready.then(() => loadAvailableCards()).catch(error => notify('Could not load saved cards: ' + error, 10)); // DESKTOP
 initDraggableArt();
